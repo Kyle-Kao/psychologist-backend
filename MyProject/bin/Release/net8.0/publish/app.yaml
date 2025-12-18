@@ -1,0 +1,10 @@
+# app.yaml
+runtime: dotnet8  # 如果是用 .NET 6 就寫 dotnet6
+instance_class: F1 # F1 是最便宜的等級，適合學生專案 (甚至有免費額度)
+
+env_variables:
+  # 這裡可以設定環境變數，例如資料庫連線字串
+  # 注意：正式專案建議用 Secret Manager，但期末專案直接寫在這裡最快
+  ASPNETCORE_ENVIRONMENT: "Production"
+  # 如果有連線字串，可以加在這裡，程式裡透過 Environment.GetEnvironmentVariable 讀取
+  ConnectionStrings__DefaultConnection: "Server=tcp:您的SQLIP,1433;Database=您的DB名稱;User ID=帳號;Password=密碼;Encrypt=true;TrustServerCertificate=true;"

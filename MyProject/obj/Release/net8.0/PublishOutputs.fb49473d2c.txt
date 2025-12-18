@@ -1,0 +1,12 @@
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/MyProject
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/appsettings.Development.json
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/appsettings.json
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/MyProject.dll
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/MyProject.deps.json
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/MyProject.runtimeconfig.json
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/MyProject.pdb
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/Microsoft.AspNetCore.OpenApi.dll
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/Microsoft.OpenApi.dll
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/Swashbuckle.AspNetCore.Swagger.dll
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/Swashbuckle.AspNetCore.SwaggerGen.dll
+/Users/kaodianyang/Desktop/psychologistBackend/psychologist-backend/MyProject/bin/Release/net8.0/publish/Swashbuckle.AspNetCore.SwaggerUI.dll
