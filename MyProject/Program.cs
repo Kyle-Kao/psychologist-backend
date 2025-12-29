@@ -91,6 +91,34 @@ app.MapGet("/api/service", async (ApplicationDbContext dbContext) =>
 .WithName("GetAllServices")
 .WithOpenApi();
 
+app.MapGet("/api/serviceTopic", async (ApplicationDbContext dbContext) =>
+{
+    var joinedData = await (
+            from s in dbContext.Service.AsNoTracking()
+            join st in dbContext.ServiceTopic.AsNoTracking() on s.Name equals st.ServiceName
+            join t in dbContext.Topic.AsNoTracking() on st.TopicName equals t.Name
+            select new
+            {
+                name = s.Name,               // 服務 ID 名稱
+                label = s.Label,             // 服務顯示標籤
+                target = s.Target,           // 服務對象 (如：成人、青少年)
+                type = s.Type,               // 服務類型 (如：個別諮商)
+                topicLabel = t.Label,        // 主題顯示名稱 (來自 topics 表)
+                topicDescription = t.Description // 主題內容描述 (來自 topics 表)
+            }
+        ).ToListAsync();
+
+        // 回傳標準格式
+        return Results.Ok(new
+        {
+            data = joinedData,
+            httpStatus = (int)HttpStatusCode.OK,
+            count = joinedData.Count
+        });
+})
+.WithName("GetServiceTopics")
+.WithOpenApi();
+
 app.MapGet("/api/topics", async (ApplicationDbContext dbContext) =>
 {
     var data = await dbContext.Topic.ToListAsync();
@@ -188,6 +216,53 @@ app.MapDelete("/api/removeTopics", async ([FromBody] DeleteTopicRequest request,
     }
 })
 .WithName("DeleteTopic")
+.WithOpenApi();
+
+app.MapPut("/api/updateTopics", async ([FromBody] Topic topic, ApplicationDbContext dbContext) =>
+{
+    try
+    {
+        // 查詢要編輯的 Topic
+        var topicToUpdate = await dbContext.Topic
+            .Where(t => t.Name == topic.Name)
+            .FirstOrDefaultAsync();
+
+        if (topicToUpdate == null)
+        {
+            var response = new {
+                data = (object)null,
+                message = "Topic not found",
+                httpStatus = (int)HttpStatusCode.NotFound
+            };
+            return Results.NotFound(response);
+        }
+
+        // 更新欄位
+        topicToUpdate.Label = topic.Label;
+        topicToUpdate.Description = topic.Description;
+
+        dbContext.Topic.Update(topicToUpdate);
+        await dbContext.SaveChangesAsync();
+
+        var successResponse = new {
+            data = topicToUpdate,
+            message = "Topic updated successfully",
+            httpStatus = (int)HttpStatusCode.OK
+        };
+
+        return Results.Ok(successResponse);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = new {
+            data = (object)null,
+            message = ex.Message,
+            httpStatus = (int)HttpStatusCode.InternalServerError
+        };
+        return Results.Json(errorResponse, statusCode: (int)HttpStatusCode.InternalServerError);
+    }
+})
+.WithName("UpdateTopic")
 .WithOpenApi();
 
 app.MapPost("/api/login", async ([FromBody] LoginRequest request, ApplicationDbContext dbContext) =>

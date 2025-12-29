@@ -15,6 +15,7 @@ namespace MyProject.Data
         public DbSet<Staff> Staff { get; set; }
         public DbSet<Topic> Topic { get; set; }
         public DbSet<Profile> Profile { get; set; }
+        public DbSet<ServiceTopic> ServiceTopic { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -48,6 +49,12 @@ namespace MyProject.Data
             modelBuilder.Entity<Profile>()
                 .ToTable("CounselorProfiles", schema: "Test")
                 .HasKey(p => p.Id);
+
+            // 設定 ServiceTopic 實體對應到 Test Schema 的 ServiceTopic Table
+            // 複合主鍵 (ServiceName, TopicName)
+            modelBuilder.Entity<ServiceTopic>()
+                .ToTable("ServiceTopic", schema: "Test")
+                .HasKey(st => new { st.ServiceName, st.TopicName });
         }
     }
 }
