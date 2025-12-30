@@ -34,9 +34,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors("AllowVite");
-
 app.UseHttpsRedirection();
+
 
 // API endpoint to get all Test data
 app.MapGet("/api/test", async (ApplicationDbContext dbContext) =>
@@ -386,6 +385,8 @@ app.MapGet("/api/profile", async (Guid id, ApplicationDbContext dbContext) =>
 .WithName("GetProfileById")
 .WithOpenApi();
 
+
+app.UseCors("AllowVite");
 
 app.Run();
 
