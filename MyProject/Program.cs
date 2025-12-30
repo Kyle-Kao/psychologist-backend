@@ -14,7 +14,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: "AllowVite", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.setIsOriginAllowed(origin => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
