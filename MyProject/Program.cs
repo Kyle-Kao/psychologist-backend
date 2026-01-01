@@ -1,12 +1,14 @@
+using Npgsql; // 關鍵引用
 using MyProject.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
+using System.Data; // 關鍵引用 (ConnectionState)
+using System.Data.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -14,10 +16,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(name: "AllowVite", policy =>
     {
-        policy.setIsOriginAllowed(origin => true)
+        policy.SetIsOriginAllowed(origin => true)
               .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowAnyMethod();
     });
 });
 
@@ -34,29 +35,118 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// 開發階段建議註解掉，避免 HTTPS Port 找不到的警告
+// app.UseHttpsRedirection();
+
+app.UseCors("AllowVite");
+
+// ==========================================
+// 1. 萬能 SQL 執行器 (修復崩潰版)
+// ==========================================
+app.MapPost("/api/general/query", async (ApplicationDbContext dbContext, [FromBody] SqlRequest request) =>
+{
+    var resultList = new List<Dictionary<string, object>>();
+
+    try
+    {
+        if (string.IsNullOrWhiteSpace(request?.Sql))
+        {
+            return Results.BadRequest(new { error = "SQL query is required", httpStatus = 400 });
+        }
+
+        // [關鍵修復] 取得連線字串，建立「全新獨立」的連線
+        // 避免直接使用 dbContext.Database.GetDbConnection() 導致 macOS Error 134 崩潰
+        var connStr = dbContext.Database.GetConnectionString();
+        
+        using var connection = new NpgsqlConnection(connStr);
+        await connection.OpenAsync();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = request.Sql;
+
+        using var reader = await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            var row = new Dictionary<string, object>();
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                var columnName = reader.GetName(i);
+                var value = reader.GetValue(i);
+                
+                // 處理 DBNull
+                row.Add(columnName, value == DBNull.Value ? null : value);
+            }
+            resultList.Add(row);
+        }
+    }
+    catch (PostgresException pgEx)
+    {
+        return Results.BadRequest(new { error = pgEx.MessageText, position = pgEx.Position, httpStatus = 400 });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = ex.Message, httpStatus = 500 }, statusCode: 500);
+    }
+
+    return Results.Ok(new { data = resultList, httpStatus = 200 });
+})
+.WithName("RunAnySql")
+.WithOpenApi();
 
 
-// API endpoint to get all Test data
+// ==========================================
+// 2. Welcome 相關 API
+// ==========================================
+app.MapPost("/api/welcome", async (ApplicationDbContext dbContext) =>
+{
+    try
+    {
+        var welcome = await dbContext.Welcome.OrderBy(w => w.Id).FirstOrDefaultAsync();
+        
+        if (welcome == null)
+        {
+            welcome = new Welcome { Id = "1", Count = 1 };
+            dbContext.Welcome.Add(welcome);
+        }
+        else
+        {
+            welcome.Count++;
+            dbContext.Welcome.Update(welcome);
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        return Results.Ok(new { data = welcome, httpStatus = 200 });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { message = ex.Message, httpStatus = 500 }, statusCode: 500);
+    }
+})
+.WithName("TrackWelcome")
+.WithOpenApi();
+
+// ==========================================
+// 3. Test 相關 API
+// ==========================================
 app.MapGet("/api/test", async (ApplicationDbContext dbContext) =>
 {
-    var data = await dbContext.Test.ToListAsync();
-    var response = new {
-        data = data,
-        httpStatus= (int)HttpStatusCode.OK
-    };
+    // 使用 FromSqlRaw 範例，保持彈性
+    var data = await dbContext.Test
+        .FromSqlRaw("SELECT * FROM \"Test\"")
+        .ToListAsync();
 
-    return Results.Ok(response);
+    return Results.Ok(new { data = data, httpStatus = 200 });
 })
 .WithName("GetAllTests")
 .WithOpenApi();
 
-// API endpoint to get all News data
+// ==========================================
+// 4. News 相關 API
+// ==========================================
 app.MapGet("/api/news", async (ApplicationDbContext dbContext) =>
 {
-    // var news = await dbContext.News.ToListAsync();
-    // var news = await dbContext.Service.ToListAsync();
-
     var newsQuery = await (
         from n in dbContext.News.AsNoTracking()
         join s in dbContext.Service.AsNoTracking() 
@@ -73,32 +163,23 @@ app.MapGet("/api/news", async (ApplicationDbContext dbContext) =>
             n.UpdateTime,
             n.TitleName,
             n.ServiceName,
-            ServiceLabel = s != null ? s.Label : null,     
-            // ServiceLabel = n.ServiceName == s.Name ? s.Label : null,            
+            ServiceLabel = s != null ? s.Label : null,          
             n.Status,
             n.Img
         }
     ).ToListAsync();
 
-    var response = new {
-        data = newsQuery,
-        httpStatus = (int)HttpStatusCode.OK
-    };
-
-    return Results.Ok(response);
+    return Results.Ok(new { data = newsQuery, httpStatus = 200 });
 })
 .WithName("GetAllNews")
 .WithOpenApi();
 
+// ==========================================
+// 5. Service & Topics 相關 API
+// ==========================================
 app.MapGet("/api/service", async (ApplicationDbContext dbContext) =>
 {
-    var data = await dbContext.Service.ToListAsync();
-    var response = new {
-        data = data,
-        httpStatus= (int)HttpStatusCode.OK
-    };
-
-    return Results.Ok(response);
+    return Results.Ok(new { data = await dbContext.Service.ToListAsync(), httpStatus = 200 });
 })
 .WithName("GetAllServices")
 .WithOpenApi();
@@ -111,172 +192,68 @@ app.MapGet("/api/serviceTopic", async (ApplicationDbContext dbContext) =>
             join t in dbContext.Topic.AsNoTracking() on st.TopicName equals t.Name
             select new
             {
-                name = s.Name,               // 服務 ID 名稱
-                label = s.Label,             // 服務顯示標籤
-                target = s.Target,           // 服務對象 (如：成人、青少年)
-                type = s.Type,               // 服務類型 (如：個別諮商)
-                topicLabel = t.Label,        // 主題顯示名稱 (來自 topics 表)
-                topicDescription = t.Description // 主題內容描述 (來自 topics 表)
+                name = s.Name,
+                label = s.Label,
+                target = s.Target,
+                type = s.Type,
+                topicLabel = t.Label,
+                topicDescription = t.Description
             }
         ).ToListAsync();
 
-        // 回傳標準格式
-        return Results.Ok(new
-        {
-            data = joinedData,
-            httpStatus = (int)HttpStatusCode.OK,
-            count = joinedData.Count
-        });
+    return Results.Ok(new { data = joinedData, httpStatus = 200, count = joinedData.Count });
 })
 .WithName("GetServiceTopics")
 .WithOpenApi();
 
 app.MapGet("/api/topics", async (ApplicationDbContext dbContext) =>
 {
-    var data = await dbContext.Topic.ToListAsync();
-    var response = new {
-        data = data,
-        httpStatus= (int)HttpStatusCode.OK
-    };
-
-    return Results.Ok(response);
+    return Results.Ok(new { data = await dbContext.Topic.ToListAsync(), httpStatus = 200 });
 })
 .WithName("GetAllTopics")
 .WithOpenApi();
 
 app.MapPost("/api/addTopics", async ([FromBody] Topic topic, ApplicationDbContext dbContext) =>
 {
-    try
-    {
-        // 檢查 Name 是否已存在
-        var existingTopic = await dbContext.Topic
-            .Where(t => t.Name == topic.Name)
-            .FirstOrDefaultAsync();
+    var exists = await dbContext.Topic.AnyAsync(t => t.Name == topic.Name);
+    if (exists) return Results.BadRequest(new { message = "Topic exists", httpStatus = 400 });
 
-        if (existingTopic != null)
-        {
-            var response = new {
-                data = (object)null,
-                message = "Topic with this name already exists",
-                httpStatus = (int)HttpStatusCode.BadRequest
-            };
-            return Results.BadRequest(response);
-        }
-
-        dbContext.Topic.Add(topic);
-        await dbContext.SaveChangesAsync();
-
-        var successResponse = new {
-            data = topic,
-            message = "Topic created successfully",
-            httpStatus = (int)HttpStatusCode.Created
-        };
-
-        return Results.Created($"/api/topics/{topic.Name}", successResponse);
-    }
-    catch (Exception ex)
-    {
-        var errorResponse = new {
-            data = (object)null,
-            message = ex.Message,
-            httpStatus = (int)HttpStatusCode.InternalServerError
-        };
-        return Results.Json(errorResponse, statusCode: (int)HttpStatusCode.InternalServerError);
-    }
+    dbContext.Topic.Add(topic);
+    await dbContext.SaveChangesAsync();
+    return Results.Created($"/api/topics/{topic.Name}", new { data = topic, httpStatus = 201 });
 })
 .WithName("CreateTopic")
 .WithOpenApi();
 
 app.MapDelete("/api/removeTopics", async ([FromBody] DeleteTopicRequest request, ApplicationDbContext dbContext) =>
 {
-    try
-    {
-        // 查詢要刪除的 Topic
-        var topicToDelete = await dbContext.Topic
-            .Where(t => t.Name == request.Name)
-            .FirstOrDefaultAsync();
+    var topic = await dbContext.Topic.FirstOrDefaultAsync(t => t.Name == request.Name);
+    if (topic == null) return Results.NotFound(new { message = "Not found", httpStatus = 404 });
 
-        if (topicToDelete == null)
-        {
-            var response = new {
-                data = (object)null,
-                message = "Topic not found",
-                httpStatus = (int)HttpStatusCode.NotFound
-            };
-            return Results.NotFound(response);
-        }
-
-        dbContext.Topic.Remove(topicToDelete);
-        await dbContext.SaveChangesAsync();
-
-        var successResponse = new {
-            data = topicToDelete,
-            message = "Topic deleted successfully",
-            httpStatus = (int)HttpStatusCode.OK
-        };
-
-        return Results.Ok(successResponse);
-    }
-    catch (Exception ex)
-    {
-        var errorResponse = new {
-            data = (object)null,
-            message = ex.Message,
-            httpStatus = (int)HttpStatusCode.InternalServerError
-        };
-        return Results.Json(errorResponse, statusCode: (int)HttpStatusCode.InternalServerError);
-    }
+    dbContext.Topic.Remove(topic);
+    await dbContext.SaveChangesAsync();
+    return Results.Ok(new { data = topic, message = "Deleted", httpStatus = 200 });
 })
 .WithName("DeleteTopic")
 .WithOpenApi();
 
 app.MapPut("/api/updateTopics", async ([FromBody] Topic topic, ApplicationDbContext dbContext) =>
 {
-    try
-    {
-        // 查詢要編輯的 Topic
-        var topicToUpdate = await dbContext.Topic
-            .Where(t => t.Name == topic.Name)
-            .FirstOrDefaultAsync();
+    var existingTopic = await dbContext.Topic.FirstOrDefaultAsync(t => t.Name == topic.Name);
+    if (existingTopic == null) return Results.NotFound(new { message = "Not found", httpStatus = 404 });
 
-        if (topicToUpdate == null)
-        {
-            var response = new {
-                data = (object)null,
-                message = "Topic not found",
-                httpStatus = (int)HttpStatusCode.NotFound
-            };
-            return Results.NotFound(response);
-        }
-
-        // 更新欄位
-        topicToUpdate.Label = topic.Label;
-        topicToUpdate.Description = topic.Description;
-
-        dbContext.Topic.Update(topicToUpdate);
-        await dbContext.SaveChangesAsync();
-
-        var successResponse = new {
-            data = topicToUpdate,
-            message = "Topic updated successfully",
-            httpStatus = (int)HttpStatusCode.OK
-        };
-
-        return Results.Ok(successResponse);
-    }
-    catch (Exception ex)
-    {
-        var errorResponse = new {
-            data = (object)null,
-            message = ex.Message,
-            httpStatus = (int)HttpStatusCode.InternalServerError
-        };
-        return Results.Json(errorResponse, statusCode: (int)HttpStatusCode.InternalServerError);
-    }
+    existingTopic.Label = topic.Label;
+    existingTopic.Description = topic.Description;
+    
+    await dbContext.SaveChangesAsync();
+    return Results.Ok(new { data = existingTopic, message = "Updated", httpStatus = 200 });
 })
 .WithName("UpdateTopic")
 .WithOpenApi();
 
+// ==========================================
+// 6. Staff & Login 相關 API
+// ==========================================
 app.MapPost("/api/login", async ([FromBody] LoginRequest request, ApplicationDbContext dbContext) =>
 {
     var staff = await (
@@ -288,74 +265,41 @@ app.MapPost("/api/login", async ([FromBody] LoginRequest request, ApplicationDbC
             s.Email,
             s.Title,
             s.Photo,
-            s.IsAcive
+            s.IsAcive // 注意：您的 DB 欄位拼字若是 IsAcive 請維持這樣
         }
     ).FirstOrDefaultAsync();
 
-    var response = new {
-        data = staff,
-        httpStatus = staff != null ? (int)HttpStatusCode.OK : (int)HttpStatusCode.Unauthorized
-    };
-
-    return Results.Ok(response);
+    return Results.Ok(new { 
+        data = staff, 
+        httpStatus = staff != null ? 200 : 401 
+    });
 })
 .WithName("Login")
 .WithOpenApi();
 
 app.MapGet("/api/staff", async (ApplicationDbContext dbContext) =>
 {
-    var staffQuery = await (
-        from s in dbContext.Staff.AsNoTracking()
-        where s.Title == "counselor"
-        select new {
-            s.Id,
-            s.Name,
-            s.Email,
-            s.Title,
-            s.Photo,
-            s.IsAcive,
-            s.Password,
-        }
-    ).ToListAsync();
-
-    var response = new {
-        data = staffQuery,
-        httpStatus = (int)HttpStatusCode.OK
-    };
-
-    return Results.Ok(response);
+    var staff = await dbContext.Staff.AsNoTracking()
+        .Where(s => s.Title == "counselor")
+        .ToListAsync();
+    return Results.Ok(new { data = staff, httpStatus = 200 });
 })
 .WithName("GetStaff")
 .WithOpenApi();
 
 app.MapGet("/api/allstaff", async (ApplicationDbContext dbContext) =>
 {
-    var staffQuery = await (
-        from s in dbContext.Staff.AsNoTracking()
-        select new {
-            s.Id,
-            s.Name,
-            s.Email,
-            s.Title,
-            s.Photo,
-            s.IsAcive,
-            s.Password,
-        }
-    ).ToListAsync();
-
-    var response = new {
-        data = staffQuery,
-        httpStatus = (int)HttpStatusCode.OK
-    };
-
-    return Results.Ok(response);
+    var staff = await dbContext.Staff.AsNoTracking().ToListAsync();
+    return Results.Ok(new { data = staff, httpStatus = 200 });
 })
 .WithName("GetAllStaff")
 .WithOpenApi();
 
+// ==========================================
+// 7. Profile 相關 API
+// ==========================================
 app.MapGet("/api/profile", async (Guid id, ApplicationDbContext dbContext) =>
 {
-
     var data = await (
         from p in dbContext.Profile.AsNoTracking()
         join s in dbContext.Staff.AsNoTracking() 
@@ -375,22 +319,16 @@ app.MapGet("/api/profile", async (Guid id, ApplicationDbContext dbContext) =>
         }
     ).FirstOrDefaultAsync();
     
-    var response = new {
-        data = data,
-        httpStatus = (int)HttpStatusCode.OK
-    };
-
-    return Results.Ok(response);
+    return Results.Ok(new { data = data, httpStatus = 200 });
 })
 .WithName("GetProfileById")
 .WithOpenApi();
 
-
-app.UseCors("AllowVite");
-
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+// ==========================================
+// DTO 定義區域 (補上缺少的類別)
+// ==========================================
+internal record SqlRequest(string Sql);
+internal record LoginRequest(string Email, string Password);
+internal record DeleteTopicRequest(string Name);

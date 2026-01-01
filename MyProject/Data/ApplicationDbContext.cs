@@ -16,6 +16,7 @@ namespace MyProject.Data
         public DbSet<Topic> Topic { get; set; }
         public DbSet<Profile> Profile { get; set; }
         public DbSet<ServiceTopic> ServiceTopic { get; set; }
+        public DbSet<Welcome> Welcome { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -55,6 +56,10 @@ namespace MyProject.Data
             modelBuilder.Entity<ServiceTopic>()
                 .ToTable("ServiceTopic", schema: "Test")
                 .HasKey(st => new { st.ServiceName, st.TopicName });
+
+            modelBuilder.Entity<Welcome>()
+                .ToTable("Welcome", schema: "Test")
+                .HasKey(w => w.Id);
         }
     }
 }
