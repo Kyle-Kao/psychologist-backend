@@ -7,7 +7,7 @@ namespace MyProject.Data
     public class Profile
     {
         [Key]
-        [Column(" Id")]
+        // [Column(" Id")]
         public Guid Id { get; set; }
         public string? Certification { get; set; }  
         public string? Education { get; set; }
