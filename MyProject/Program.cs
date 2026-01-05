@@ -152,6 +152,7 @@ app.MapGet("/api/news", async (ApplicationDbContext dbContext) =>
         join s in dbContext.Service.AsNoTracking() 
         on n.ServiceName equals s.Name into joinedServices
         from s in joinedServices.DefaultIfEmpty()
+        orderby n.CreateTime descending
         select new
         {
             n.Id,
